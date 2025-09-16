@@ -43,17 +43,39 @@ def simulation_stochastic(target_model : GraphInferenceEngineTG, draft_model: Gr
     new_tokens_buffer =  torch.zeros(max_length).long().to('cuda:0')
     parents_buffer =  torch.zeros(max_length).long().to('cuda:0')
     position_ids = torch.zeros(max_length).long().to('cuda:0')
+
+    # --------------------------------------------------------------------------
+    # 각 branch별 수락이 몇번 되었는지 체크
+    # w: branch 수
+    # +1: 모두 거절 되었을 경우를 게록하기 위한 추가공간
+    
     branch_prob = torch.zeros(w + 1).to('cuda:0')
+    
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # 각 branch별 수락률을 저장
+    # 추후 Acceptance Vector를 사용하는 tree_search.py에서는 1-based indexing으로 되어있어, index를 맞춰주기 위해 첫칸을 비워둠
+    # output_branch_prob[0] = 0 으로 비워둠
+    # output_branch_prob[1] = branch_prob[0] (첫 번째 자식의 확률)
+    # output_branch_prob[2] = branch_prob[0] (두 번째 자식의 확률)
+    # ...
+    # output_branch_prob[w] = branch_prob[w-1] (마지막 자식의 확률)
+    # output_branch_prob[w+2] = branch_prob[w] ( 번째 자식의 확률)
+
     output_branch_prob = torch.zeros(w + 2).to('cuda:0')
+    
+    # --------------------------------------------------------------------------
+    
     with torch.no_grad():
-        for step, batch in tqdm(enumerate(dataloader), total=num_eval_steps):
-            input_ids = batch['input_ids'][..., :128]
-            labels = batch['labels'][..., :128]
+        for step, batch in tqdm(enumerate(dataloader), total=num_eval_steps):    # dataloader에서 데이터샘플(prompt)을 하나씩 가져오면서 loop
+            input_ids = batch['input_ids'][..., :128]    # 각 샘플의 초기 prompt길이를 128개 토큰으로 설정
+            labels = batch['labels'][..., :128]  
             terminate = False
             if labels[0][-1] == -100: terminate = True
-            draft_kv_len = 0
-            target_kv_len = 0
-            while input_ids.shape[1] < 256 and terminate == False:
+            draft_kv_len = 0     # kv cache길이 초기화
+            target_kv_len = 0    # kv cache길이 초기화    
+            while input_ids.shape[1] < 256 and terminate == False:    # sequence길이가 256이 되거나 종료 토큰이 나올 때가지 반복
                 attn_mask.fill_(torch.finfo(dtype).min)
                 spectree = SpecTreeTest(prefix=input_ids.squeeze(0), device='cuda:0', temperature=T,
                                     top_p=top_p, 
