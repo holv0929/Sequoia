@@ -6,34 +6,49 @@ import sys
 from copy import deepcopy
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--config', type=str, default="demo-config.json", help='config')
+parser.add_argument('--config', type=str, default="demo-config.json", help='config')    # DP algorithm의 환경세팅 정보를 불러옴
 args = parser.parse_args()
 print(args)
 with open(args.config, 'r') as f:
     config = json.load(f)
-p = torch.load(config["acceptance_rate_vector"]).cpu()[:-1]
-max_branch = p.shape[0] - 1
+p = torch.load(config["acceptance_rate_vector"]).cpu()[:-1]    # acceptance-rate-vector를 불러옴
+max_branch = p.shape[0] - 1    # acceptance vector의 크기를 바탕으로, 고려할 최대 branch 수 계산
 
-max_depth = config["max_depth"]
+# -----------------------------------------------------------------------------------
+# config <-- demo-config.json: DP algorithm에서 쓰일 parameter값들
+# p <-- acceptance-rate-vector.pt: 위치별 수락률
 
-max_budget = config["max_budget"]
+
+# -----------------------------------------------------------------------------------
+## DP table 및 변수 초기화
+
+max_depth = config["max_depth"]    # 설정 파일에서 최대 깊이 가져옴
+
+max_budget = config["max_budget"]    # 설정 파일에서 최대 토큰 수를 가져옴
 
 T = torch.zeros((max_budget + 1, max_depth + 1, max_branch + 1)).fill_(-torch.inf)
 T_max = torch.zeros((max_budget + 1, max_depth + 1))
-branch_map = {}
+branch_map = {}    # 최고 점수를 만들기위해 어떤 하위트리를 사용했는지, 그 경로를 기록해둘 딕셔너리. 나중에 실제 트리 구조를 복원할 때 사용
+
+# -----------------------------------------------------------------------------------
+## base case 설정
+
+# 모든 깊이에 대해 자식노드 branch가 0(b=0)개일 때, 그리고 노드수가 1(m=1)개라면, 기대 토큰 수는 1(T...=1)이다. 
 for l in range(1, max_depth + 1):
     for b in range(0, max_branch + 1):
         if b == 0:
             T[1][l][b] = 1.0
             branch_map[(1,l,b)] = []
 
+# ----------------------------------------------------------------------------------------
+## 1단계 : DP algorithm으로 주어진 모든 '토큰 수'와 '깊이'로 가질 수 있는 모든 형태의 tree topology를 탐색
 
 for m in tqdm(range(2, max_budget+1)):
     for l in range(2, max_depth + 1):
         T[m][l][1] = 1 + p[1] * T[m-1][l-1].max()
         if T[m][l][1] > 0:
-            branch_map[(m,l,1)] = [(m-1, l-1, T[m-1][l-1].argmax(dim=0).item())]
-        for b in range(2, max_branch + 1):
+            branch_map[(m,l,1)] = [(m-1, l-1, T[m-1][l-1].argmax(dim=0).item())]    # 자식 branch가 1인 case
+        for b in range(2, max_branch + 1):                                          # 자식 branch가 2이상인 case 
             max_value = -torch.inf
             #new_y = -1
             for y in range(1, m):
@@ -52,13 +67,16 @@ for m in tqdm(range(2, max_budget+1)):
  
     
 
-results = T.max(dim=2).values
+results = T.max(dim=2).values      
 print(results)
-draft_inference_time = config['draft_time']
-target_verify_time = config['target_time']
+draft_inference_time = config['draft_time']    # draft model 호출에 걸리는 시간
+target_verify_time = config['target_time']     # target model 호출에 걸리는 시간
 
 
 valid_budget = config['valid_budget']
+
+# ---------------------------------------------------------------------------------------------------------
+## 2단계 : 1단계로 부터 얻은 T(각 상황별 optimal tree structure)에 대해 **시간**도 같이 고려 하여 최종 tree structure를 구함
 
 dec_time = torch.inf
 pairs = None
@@ -76,6 +94,8 @@ print(dec_time, target_verify_time[0] / dec_time, pairs)
 
 (m, l) = pairs
 b = T[m][l].argmax(dim=0).item()
+
+
 
 positions = [0]
 states = [(m,l,b)]
@@ -130,4 +150,8 @@ grow_map = {
 path = config['dst']
 
 torch.save(grow_map, path)
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# 1단계 (기대 토큰 수 최대화): DP 알고리즘을 이용해, 가능한 모든 (토큰 수, 깊이) 조합에 대해 기대 토큰 수를 최대화하는 구조를 모두 찾아 그 점수를 점수표 T에 기록합니다.
+# 2단계 (시간당 효율 최대화): 1단계에서 찾은 챔피언 후보들 중에서, 실제 하드웨어의 실행 시간을 고려한 **'토큰당 평균 소요 시간'**이 가장 낮은, 즉 가장 효율적인 단 하나의 최종 트리 구조를 선택하여 grow_map.pt 파일로 저장합니다.
 
