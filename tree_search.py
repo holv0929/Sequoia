@@ -76,7 +76,9 @@ target_verify_time = config['target_time']     # target model 호출에 걸리�
 valid_budget = config['valid_budget']
 
 # ---------------------------------------------------------------------------------------------------------
-## 2단계 : 1단계로 부터 얻은 T(각 상황별 optimal tree structure)에 대해 **시간**도 같이 고려 하여 최종 tree structure를 구함
+## 2단계 : 1단계로 부터 얻은 T(각 상황별 optimal tree structure)에 대해 시간도 같이 고려 하여 최종 tree structure를 구함
+# 평균 토큰 생성 시간 = ( max_depth * draft_inference_time + target_time ) / 기대_토큰_생성_수
+# x = ((d) * draft_inference_time + target_time) / ac_len
 
 dec_time = torch.inf
 pairs = None
