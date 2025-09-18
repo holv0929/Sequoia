@@ -57,7 +57,7 @@ class SpecTree(Tree):
         total_nodes = len(prefix) + self.tree_size - 1
         self.attn_mask = self.full_attn_mask[self.max_length - total_nodes: 2 * self.max_length - total_nodes, self.max_length - total_nodes: 2 * self.max_length - total_nodes]
         self.ground_truth_len = len(prefix)
-        self.r = torch.rand(len(position_ids), dtype=self.dtype).to(self.device)
+        self.r = torch.rand(len(position_ids), dtype=self.dtype).to(self.device)    # Verification과정에서 r, random 값 tensor
         
         self.position_ids[len(prefix) : len(prefix) + self.tree_size - 1] = (self.grow_map["depth"][1:].to(self.device) + len(prefix) - 1)
         self.storage_ids = torch.arange(self.max_length).to(self.device)
@@ -421,6 +421,10 @@ class SpecTreeTest(Tree):
         
     @torch.inference_mode()
     def verify(self, benchmark = False):
+        ''' 1. Targetmodel 호출하여 construct_grow_map을 통해 생성된 트리 전체에 대해, target model의 forward pass를 한번 실행 함
+            2. greedy방식으로 root부터 시작해 가장 긴 정답 경로를 찾아감
+            3. self.accept_step method를 반복적으로 호출 하고, 비복원 추출 로직에 따라 수락할 자식을 단 하나 찾아내고, 수락된 자식이 있으면, 그 경로를 더 깊이 탐색 수행
+            '''
         new_node_num = (self.num_nodes - self.ground_truth_len + 1)
         if self.target_kv_len == 0:
             start_pos = 0
