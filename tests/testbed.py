@@ -17,6 +17,11 @@ from utils import get_sampling_logits, _make_causal_mask, cuda_graph_for_residua
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from Engine.offload_engine import OffloadEngine
 import random
+
+# -----------------------------------------------------------------------------------------------------------------
+## 인자 파싱(argparse):
+# --model, --target, --growmp, --Mode 등 사용자가 입력한 모든 실행 옵션을 읽어옴
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, help='model')
 parser.add_argument('--target', type=str, help='target model')
@@ -32,6 +37,10 @@ parser.add_argument('--Mode', type=str, default="greedy", help='tree mode')
 parser.add_argument('--offloading', action='store_true')
 args = parser.parse_args()
 print(args)
+
+# -----------------------------------------------------------------------------------------------------------------
+## 무작위 시드 고정 : 재현성을 보장하기 위해 random seed를 특정 seed로 고정시킴
+
 def setup_seed(seed):
      torch.manual_seed(seed)
      torch.cuda.manual_seed_all(seed)
@@ -41,10 +50,14 @@ def setup_seed(seed):
 setup_seed(args.seed)
 
 
+# -----------------------------------------------------------------------------------------------------------------
+## SEQUOIA 추론 가속 방식의 실제 성능(속도)를 측정
 
 def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9,
             max_length=512, residual_graph=None, grow_map=None, sampling_callables = None,
             sample_gather_indices = None):
+    
+    # ***Initialization***
     num_eval_steps = len(dataloader)
     num_decoding_steps = 0
     num_large_model_steps = 0
@@ -57,14 +70,20 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
     position_ids = torch.zeros(max_length).long().to('cuda:0')
     
     with torch.no_grad():
-        for step, batch in tqdm(enumerate(dataloader), total=num_eval_steps):
+         # ***dataloader로 부터 prompt 하나씩 꺼내와서, 각 prompt에 대한 토큰 생성 및 시간 측정 시작***
+        for step, batch in tqdm(enumerate(dataloader), total=num_eval_steps):     # dataloader에서 data sample(prompt)을 하나씩 꺼내와 루프를 시작.
             input_ids = batch['input_ids'][..., :128]
             labels = batch['labels'][..., :128]
             terminate = False
             if labels[0][-1] == -100: terminate = True
-            draft_kv_len = 0
-            target_kv_len = 0
+            draft_kv_len = 0     # 각 prompt 마다 kv cache등의 상태를 초기화
+            target_kv_len = 0    # 각 prompt 마다 kv cache등의 상태를 초기화
             attn_mask.fill_(torch.finfo(dtype).min)
+
+            # ***grow_map.pt에 저장된 tree structure를 재구성 하고, speculative decoding 진행***
+            # 1.tree 구조에 맞게 draft token 생성 
+            # 2.verification by target model
+         
             spectree = SpecTree(prefix=input_ids.squeeze(0), device='cuda:0', temperature=T,
                                     top_p=top_p,
                                     draft_kv_len=draft_kv_len, target_kv_len=target_kv_len,
@@ -77,6 +96,8 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                                     sample_gather_indices = sample_gather_indices)
             torch.cuda.synchronize()
             t1 = time.time()
+
+            # ***spectree로 부터 생성된 토큰을, output sequence에 붙여 그 길이가 256에 도달하거나 종료 토큰이 나올 때 까지 문장을 생성해 나가는 과정***
             while input_ids.shape[1] < 256 and terminate == False:
                 spectree.construct_grow_map()
                 valid_tokens, draft_kv_len, target_kv_len, terminate = spectree.verify()
@@ -95,7 +116,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
     return num_decoding_steps / num_large_model_steps
 
 
-
+# ***Auto-regressive decoding to compare with SEQUOIA***
 def simulation_baseline(target_model : GraphInferenceEngineTG, dataloader: DataLoader, T=0.6, top_p=0.9, max_length=256):
     num_eval_steps = len(dataloader)
     num_decoding_steps = 0
@@ -113,7 +134,7 @@ def simulation_baseline(target_model : GraphInferenceEngineTG, dataloader: DataL
             t1 = time.time()
             inner_decoding_step = 0
             start_length = 0
-            while inner_decoding_step < 32 and terminate == False:
+            while inner_decoding_step < 32 and terminate == False:     # 최대 토큰 개수 32개 미만
                 if inner_decoding_step == 0:
                     start_length = input_ids.shape[1]
                     logits = target_model.inference(input_ids = input_ids, storage_ids=storage_ids[:start_length],
@@ -141,6 +162,10 @@ def simulation_baseline(target_model : GraphInferenceEngineTG, dataloader: DataL
             
     print("total time :{:.5f}s, latency :{:.5f}s, decoding step: {}".format(total_time, total_time / num_decoding_steps, num_decoding_steps))
     return num_decoding_steps
+
+# -----------------------------------------------------------------------------------------------------------------
+## SEQUOIA 추론 가속 방식의 실제 성능(속도)를 측정 - 상세 분석 버전 : 각 세부 단계에서 시간이 얼마나 소요되는지 profiling하여 성능 병복 지점 분석 가능
+
 def simulation_benchmark(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9, 
                 max_length=512, residual_graph=None, grow_map=None, sampling_callables = None,
                 sample_gather_indices = None):
