@@ -313,9 +313,11 @@ class SpecTreeTest(Tree):
         
         self.initialize(attn_mask, sequence, new_tokens_buffer, parents_buffer, position_ids, None)
         self.set_prefix(prefix=prefix)
+
+        # ***1-depth tree 생성***
         self.Successors = [list(range(1, self.max_width + 1))]
         self.Successors.extend([[] for _ in range(self.max_width)])
-
+        # -----------------------
         self.attn_mask = self.full_attn_mask[:self.max_length, :self.max_length]
         for idx in range(self.max_width):
              self.attn_mask[idx + self.num_nodes] = self.attn_mask[self.num_nodes - 1]
