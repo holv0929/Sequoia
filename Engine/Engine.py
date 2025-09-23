@@ -4,6 +4,8 @@ from .Llama_model import LlamaForCausalLM_FI, LlamaForCausalLM_TG
 from typing import List, Optional, Tuple, Union
 import gc
 import accelerate
+
+# ***모델과 KV 캐시르 하나로 묶음***
 class InferenceEngine:
     def __init__(self, 
         max_length:int,
@@ -15,7 +17,7 @@ class InferenceEngine:
         self.dtype = dtype
         self.max_length = max_length
 
-        self.model = LlamaForCausalLM_FI.from_pretrained(model_name_or_path, torch_dtype=dtype, device_map=device)
+        self.model = LlamaForCausalLM_FI.from_pretrained(model_name_or_path, torch_dtype=dtype, device_map=device)    # 지정된 경로에서 Llama 모델을 불러와 GPU에 올림
         self.model.eval()
         self.model_config = self.model.config
 
