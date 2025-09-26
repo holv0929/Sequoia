@@ -246,7 +246,7 @@ class SpecTree(Tree):
         if benchmark:
             sample_time = 0
             compute_time = 0
-        for i in range(self.draft_step - 1):
+        for i in range(self.draft_step - 1):    # Tree structure 대한 draft token 생산을 여러단계로 나누어 실행 --> collective_grow_static을 반복적으로 호출 --> 매 호출마다 grow_map에 있는 전략에 따라 draft token 생상량이 배번 바뀔 수 있음
                 if benchmark:
                         _, t1, t2 = self.collective_grow_static(self.grow_map_roots_gpu[i], self.grow_map['branches'][i], benchmark=benchmark, grow_step=i)
                         sample_time += t1
