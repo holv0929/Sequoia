@@ -1,14 +1,14 @@
 import sys
 sys.path.append("..")
-from transformers import DataCollatorForLanguageModeling, AutoTokenizer
-import torch
+from transformers import DataCollatorForLanguageModeling, AutoTokenizer     # NLP모델 사용 / 사전 학습된 모델 제공 | padding 및 masking을 위한 label 생성 | 해당 모델에 맞게 알아서 tokenizing
+import torch     # 딥러닝 및 인공지능 모델 생성/학습을 위한 open source library
 import numpy as np 
 from datasets import load_from_disk
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 from torch.nn.functional import softmax
-from accelerate import Accelerator
-import argparse
+from accelerate import Accelerator     # 분산 학습
+import argparse     # 실행 command 입력시 유연하게 입력값 주기 가능 line 25-37 같이
 from data_converter import convert_wiki_dataset, convert_cnn_dataset, convert_c4_dataset_eval, convert_wikimqa_dataset
 import argparse
 from Tree.SpecTree import SpecTree
