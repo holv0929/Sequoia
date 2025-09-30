@@ -42,11 +42,11 @@ print(args)
 ## 무작위 시드 고정 : 재현성을 보장하기 위해 random seed를 특정 seed로 고정시킴
 
 def setup_seed(seed):
-     torch.manual_seed(seed)
-     torch.cuda.manual_seed_all(seed)
-     np.random.seed(seed)
-     random.seed(seed)
-     torch.backends.cudnn.deterministic = True
+     torch.manual_seed(seed)     # PyTorch의 CPU 난수 생성기 시드를 고정
+     torch.cuda.manual_seed_all(seed)     # 모든 GPU 난수 생서기 시드를 고정
+     np.random.seed(seed)     # NumPy 라이브러리의 난수 생성기 시드를 고정
+     random.seed(seed)     # python 기본 내장 random 라이브러리의 시드를 고정
+     torch.backends.cudnn.deterministic = True     # 항상 동일한 알고리즘을 사용하여 계산하도록 강제
 setup_seed(args.seed)
 
 
